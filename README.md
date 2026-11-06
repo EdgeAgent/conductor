@@ -119,9 +119,21 @@ The Invoice Desk is a fake business app with no API — ask Conductor to *"total
 
 ## Screenshots
 
-<!-- Screenshots (PNG) are added via the GitHub web upload — they cannot ride the API push. Files: docs/screenshots/workspace-chat.png, docs/screenshots/workspace-tools.png, docs/screenshots/api-vault.png, docs/screenshots/side-panel.png -->
+**Big Workspace — chat, running privately on the local (Ollama) route:**
 
-_Screenshots of the Big Workspace, the synthesized tool grid, the API Vault, and the side panel are being added to `docs/screenshots/`._
+![Conductor Big Workspace chat](docs/screenshots/workspace-chat.png)
+
+**The toolset Conductor synthesized from one page:**
+
+![Conductor synthesized tools](docs/screenshots/workspace-tools.png)
+
+**API Vault — saved API definitions and on-device keys, always masked:**
+
+![Conductor API Vault](docs/screenshots/api-vault.png)
+
+**The side panel — full chat, route badge, quick actions:**
+
+<img src="docs/screenshots/side-panel.png" alt="Conductor side panel" width="400">
 
 ## Pricing
 
