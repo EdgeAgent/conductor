@@ -1,0 +1,1 @@
+{"dependencies":{"ws":"^8.18.0"},"description":"Local MCP bridge for the Conductor Chrome extension — exposes the active tab's tools to any MCP client over stdio.","name":"conductor-bridge","private":true,"type":"module","version":"1.0.0"}

@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="panel.css" />
+  <title>Conductor — AI Browser Agent &amp; MCP Tools</title>
+</head>
+<body>
+  <header class="brand">
+    <div class="mark">C</div>
+    <div class="brand-text">
+      <div class="brand-name">CONDUCTOR</div>
+      <div class="brand-sub" id="page-context">AI Browser Agent &amp; MCP Tools</div>
+    </div>
+    <span class="route-badge" id="route-badge" title="Where chat runs. Local = page content never leaves this computer.">Checking route…</span>
+    <div class="bridge-dot" id="bridge-dot" title="MCP bridge status"></div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="chat">💬 Chat</button>
+    <button class="tab" data-tab="tools">🧰 Tools <span class="count" id="tool-count"></span></button>
+    <button class="tab" data-tab="skills">🧠 Skills</button>
+    <button class="tab" data-tab="vault">🔐 Vault</button>
+    <button class="tab" data-tab="activity">🛡 Activity</button>
+    <button class="tab" data-tab="settings">⚙️ Settings</button>
+  </nav>
+
+  <div class="targetbar">
+    <label class="target-label"><span class="target-text">Working on</span>
+      <select id="target-tab" title="Choose the browser tab Conductor should operate"></select>
+    </label>
+    <label class="follow" title="Follow active tab — switch automatically when you change tabs">
+      <input type="checkbox" id="follow-active" /> <span class="ft-full">Follow active tab</span><span class="ft-short">Follow</span>
+    </label>
+    <button id="open-workspace" class="btn primary">⛶ Big window</button>
+  </div>
+
+  <main>
+    <section id="view-chat" class="view active">
+      <div id="messages" class="messages"></div>
+      <div class="quickbar">
+        <button class="btn ghost qa" id="qa-scan">🔍 Scan site</button>
+        <button class="btn ghost qa" id="qa-summarize">📄 Summarize page</button>
+        <button class="btn ghost qa" id="qa-tools">🧰 List tools</button>
+      </div>
+      <div class="skillbar" id="skill-bar" hidden>
+        <span class="skillbar-text">🧠 Skill active: <b id="skill-bar-name"></b></span>
+        <button class="btn ghost tiny" id="skill-bar-off">✕ Turn off</button>
+      </div>
+      <div class="composer">
+        <textarea id="input" rows="2" placeholder="Tell Conductor what to do on this page…  (e.g. “total the unpaid invoices”)"></textarea>
+        <div class="composer-row">
+          <span class="hint" id="composer-hint">Reads run automatically · writes ask first</span>
+          <button id="cloud-toggle" class="btn ghost tiny" hidden title="Send this chat to OpenRouter instead of the local model — only if you flip this. Page data leaves the computer on the cloud route.">☁ Use cloud</button>
+          <button id="stop" class="btn ghost" hidden>■ Stop</button>
+          <button id="send" class="btn primary">Send ➤</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-tools" class="view">
+      <div class="pad">
+        <div id="tools-summary" class="summary"></div>
+        <div class="row gap">
+          <button id="export-mcp" class="btn">⬇ Export MCP JSON</button>
+          <button id="import-api" class="btn">⬆ Import API Lens OpenAPI</button>
+          <input type="file" id="import-file" accept="application/json" hidden />
+          <button id="refresh-tools" class="btn ghost">↻ Refresh</button>
+        </div>
+        <div id="tools-list"></div>
+      </div>
+    </section>
+
+    <section id="view-skills" class="view">
+      <div class="pad">
+        <p class="summary">Skills are <b>your</b> reusable instruction packs, stored only in this browser. Activate one and it guides the chat for that conversation. Skills never change the safety rules — write tools still ask first.</p>
+        <div class="row gap">
+          <button id="skill-new" class="btn primary">＋ New skill</button>
+        </div>
+        <div id="skills-list"></div>
+        <div class="skill-editor" id="skill-editor" hidden>
+          <h3 id="skill-editor-title">New skill</h3>
+          <input type="hidden" id="skill-id" />
+          <label>Skill name
+            <input type="text" id="skill-name" placeholder="e.g. Invoice chase summary" />
+          </label>
+          <label>Short description
+            <input type="text" id="skill-desc" placeholder="What this skill does, in one line" />
+          </label>
+          <label>Site scope (optional)
+            <input type="text" id="skill-origin" placeholder="e.g. app.example.com — blank = any site" />
+          </label>
+          <label>Instructions
+            <textarea id="skill-instructions" rows="7" placeholder="Tell the agent exactly how to do this task: what to read, what to produce, what never to invent…"></textarea>
+          </label>
+          <div class="row gap">
+            <button id="skill-save" class="btn primary">Save skill</button>
+            <button id="skill-cancel" class="btn ghost">Cancel</button>
+          </div>
+          <p class="note" id="skill-editor-note"></p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-vault" class="view">
+      <div class="pad">
+        <p class="summary">The Vault keeps API definitions and optional API keys <b>on this device only</b> — in your Chrome profile, never synced, never exported, and never sent to any model. A key is attached only when one of that origin's API tools runs in your own tab, from Conductor's chat.</p>
+
+        <h3 class="vault-h">Saved API definitions</h3>
+        <div id="vault-defs"></div>
+        <div class="row gap">
+          <button id="vault-import" class="btn">⬆ Import OpenAPI (from API Lens)</button>
+          <input type="file" id="vault-import-file" accept="application/json" hidden />
+          <button id="vault-def-new" class="btn">＋ Add endpoints manually</button>
+        </div>
+        <div class="skill-editor" id="vault-def-editor" hidden>
+          <h3>Manual API definition</h3>
+          <label>Name
+            <input type="text" id="vdef-name" placeholder="e.g. Billing API" />
+          </label>
+          <label>Origin
+            <input type="text" id="vdef-origin" placeholder="https://api.example.com" />
+          </label>
+          <label>Endpoints — one per line: METHOD /path — description
+            <textarea id="vdef-endpoints" rows="6" placeholder="GET /invoices — list invoices&#10;POST /invoices/{id}/pay — mark an invoice paid"></textarea>
+          </label>
+          <div class="row gap">
+            <button id="vdef-save" class="btn primary">Save definition</button>
+            <button id="vdef-cancel" class="btn ghost">Cancel</button>
+          </div>
+          <p class="note" id="vdef-note"></p>
+        </div>
+
+        <h3 class="vault-h">API keys</h3>
+        <div id="vault-keys"></div>
+        <div class="skill-editor">
+          <h3>Add a key</h3>
+          <label>Label
+            <input type="text" id="vkey-label" placeholder="e.g. Production" />
+          </label>
+          <label>Origin
+            <input type="text" id="vkey-origin" placeholder="https://api.example.com" />
+          </label>
+          <label>Header name
+            <input type="text" id="vkey-header" value="Authorization" />
+          </label>
+          <label>Key value
+            <input type="password" id="vkey-value" placeholder="Paste the key — it stays on this device" />
+          </label>
+          <div class="row gap">
+            <button id="vkey-save" class="btn primary">Save key</button>
+          </div>
+          <p class="note" id="vkey-note"></p>
+        </div>
+        <div class="row gap">
+          <button id="vault-clear-keys" class="btn danger">Clear all keys</button>
+        </div>
+        <p class="note">Honest storage note: keys live in Chrome's local extension storage, protected by your OS user account — that is not the same as a dedicated encrypted vault. They are never included in any export and never leave this device except to the origin you saved them for.</p>
+      </div>
+    </section>
+
+    <section id="view-activity" class="view">
+      <div class="pad">
+        <div class="row gap">
+          <span class="summary" id="activity-summary">Everything Conductor's chat has done, newest first. Stored only in this browser.</span>
+          <button id="activity-clear" class="btn ghost">Clear log</button>
+        </div>
+        <div id="activity-list"></div>
+      </div>
+    </section>
+
+    <section id="view-settings" class="view">
+      <div class="pad settings">
+        <h3>Model route</h3>
+        <div class="seg" role="radiogroup" aria-label="Model route preference">
+          <label><input type="radio" name="route-pref" value="auto" /> Auto — local first</label>
+          <label><input type="radio" name="route-pref" value="local" /> Local only</label>
+          <label><input type="radio" name="route-pref" value="cloud" /> Cloud</label>
+        </div>
+
+        <div class="route-block">
+          <div class="route-block-head">🖥 Local — Ollama <span class="route-state" id="ollama-status">Checking…</span></div>
+          <label>Local model
+            <select id="set-local-model"></select>
+          </label>
+          <p class="note" id="ollama-note">When Ollama is running on this computer, chat runs <b>100% locally</b> — page content never leaves the machine. Tool-calling works best with models like llama3.1 or qwen2.5.</p>
+          <button id="ollama-redetect" class="btn ghost">↻ Re-detect Ollama</button>
+        </div>
+
+        <div class="route-block">
+          <div class="route-block-head">☁ Cloud — OpenRouter <span class="route-state dim">optional stronger models</span></div>
+          <label>OpenRouter API key
+            <input type="password" id="set-key" placeholder="sk-or-… (stored only in this browser)" />
+          </label>
+          <label>Cloud model
+            <input type="text" id="set-model" placeholder="openrouter/free" />
+          </label>
+          <p class="note">Page data goes to OpenRouter <b>only</b> when the cloud route is active — because you picked it above, or flipped “Use cloud” for one chat. There is no silent fallback: if the local route fails, Conductor stops and asks.</p>
+        </div>
+
+        <h3>Workspace</h3>
+        <p class="note">The side panel is the quick view. Use <b>⛶ Big window</b> for the full workspace: a large, readable chat, wider tool cards, and room to inspect results. The <b>Working on</b> picker at the top locks Conductor to the right web page even while the big window has focus.</p>
+
+        <h3>MCP bridge</h3>
+        <label class="check"><input type="checkbox" id="set-bridge" /> Connect to the local MCP bridge (ws://127.0.0.1:8787)</label>
+        <label class="check"><input type="checkbox" id="set-bridge-writes" /> Allow bridge clients to run <b>write</b> tools without asking (off = reads only)</label>
+        <p class="note">Run <code>node conductor-bridge.mjs</code> from the extension's <code>bridge/</code> folder, add it to your MCP client, and Hermes / Claude / any MCP host can drive this browser. The bridge also carries local model calls if your Ollama refuses direct extension connections. Status: <b id="bridge-status">unknown</b></p>
+
+        <h3>About</h3>
+        <p class="note"><b>Local-first:</b> when Ollama is on, page content never leaves your computer.<br />
+        Conductor <b>Free</b> while in beta — every feature unlocked, bring your own model (local or your own key).<br />
+        <b>Conductor Pro — $12/month</b> at launch: hosted models (no key needed), saved tool libraries, team sharing. Flat price, no credits. No account, no telemetry.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="lib.js"></script>
+  <script type="module" src="panel.js"></script>
+</body>
+</html>

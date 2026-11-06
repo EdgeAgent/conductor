@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+  <title>Conductor — AI Browser Agent &amp; MCP Tools</title>
+</head>
+<body>
+  <header class="brand">
+    <div class="mark">C</div>
+    <div class="brand-text">
+      <div class="brand-name">CONDUCTOR</div>
+      <div class="brand-sub" id="pop-sub">AI Browser Agent &amp; MCP Tools</div>
+    </div>
+    <div class="bridge-dot" id="pop-bridge" title="MCP bridge status"></div>
+  </header>
+
+  <div class="card">
+    <div class="card-row"><span class="k">This page</span><span class="v" id="pop-stats">Checking…</span></div>
+    <div class="card-row"><span class="k">Model route</span><span class="v"><span class="route-badge" id="pop-route">Checking…</span></span></div>
+    <div class="card-row"><span class="k">MCP bridge</span><span class="v" id="pop-bridge-text">Off</span></div>
+  </div>
+
+  <div class="actions">
+    <button class="btn primary big" id="open-panel">💬 Open chat</button>
+    <div class="row2">
+      <button class="btn" id="open-big">⛶ Big workspace</button>
+      <button class="btn" id="open-settings">⚙️ Settings</button>
+    </div>
+  </div>
+
+  <p class="foot">Reads run free · writes ask first.<br />Local route: page content never leaves this computer.</p>
+
+  <script src="popup.js"></script>
+</body>
+</html>

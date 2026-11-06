@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Invoice Desk — Conductor Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f6f8; color: #12212e; margin: 2rem; }
+    .card { background: #fff; border: 1px solid #dde4ea; border-radius: 12px; padding: 16px 20px; max-width: 760px; margin-bottom: 18px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #e3e9ee; padding: 7px 9px; text-align: left; }
+    th { color: #5a7184; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+    input, button { padding: 8px 11px; border-radius: 8px; border: 1px solid #c4d0da; font: inherit; }
+    button { background: #0f766e; color: #fff; border-color: #0f766e; cursor: pointer; }
+    button.secondary { background: #fff; color: #12212e; }
+    .hint { color: #5a7184; max-width: 760px; }
+    code { background: #eef3f6; padding: 1px 6px; border-radius: 5px; }
+    .paid { color: #15803d; font-weight: 600; } .unpaid { color: #b45309; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>🧾 Invoice Desk — Conductor demo app</h1>
+  <p class="hint">
+    A fake little business app with <b>no API and no WebMCP</b> — exactly the kind of site Conductor synthesizes tools for.
+    Load the extension, open the Conductor side panel on this tab, add your OpenRouter key in Settings, then try:
+  </p>
+  <p class="hint">
+    <code>"Total the unpaid invoices"</code> · <code>"Which clients owe the most?"</code> ·
+    <code>"Add an invoice for Maple Dental, $450, unpaid"</code> (watch the write approval) ·
+    <code>"Mark all invoices paid"</code> (also gated)
+  </p>
+
+  <div class="card">
+    <h2>Invoices</h2>
+    <table id="invoices">
+      <thead><tr><th>ID</th><th>Client</th><th>Amount</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>INV-101</td><td>Maple Street Dental</td><td>$320</td><td class="unpaid">Unpaid</td></tr>
+        <tr><td>INV-102</td><td>Riverside Realty</td><td>$1,150</td><td class="unpaid">Unpaid</td></tr>
+        <tr><td>INV-103</td><td>Northgate Gym</td><td>$480</td><td class="paid">Paid</td></tr>
+        <tr><td>INV-104</td><td>Maple Street Dental</td><td>$210</td><td class="unpaid">Unpaid</td></tr>
+        <tr><td>INV-105</td><td>Bluebird Bakery</td><td>$640</td><td class="paid">Paid</td></tr>
+        <tr><td>INV-106</td><td>Riverside Realty</td><td>$300</td><td class="unpaid">Unpaid</td></tr>
+      </tbody>
+    </table>
+    <p><button class="secondary" id="mark-paid">Mark all paid</button></p>
+  </div>
+
+  <div class="card">
+    <h2>Add an invoice</h2>
+    <form id="add-invoice" name="add-invoice">
+      <label>Client name <input name="client" required /></label>
+      <label>Amount <input name="amount" type="number" required /></label>
+      <label>Status
+        <select name="status"><option>Unpaid</option><option>Paid</option></select>
+      </label>
+      <button type="submit">Add invoice</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Search</h2>
+    <form id="search" name="search" method="get">
+      <label>Search invoices <input name="q" type="search" placeholder="client name…" /></label>
+      <button type="submit">Search</button>
+    </form>
+    <p id="search-result" class="hint"></p>
+  </div>
+
+  <script>
+    let nextId = 107;
+    document.getElementById("add-invoice").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const tr = document.createElement("tr");
+      const status = fd.get("status");
+      tr.innerHTML = `<td>INV-${nextId++}</td><td></td><td>$${Number(fd.get("amount")).toLocaleString()}</td><td class="${status === "Paid" ? "paid" : "unpaid"}">${status}</td>`;
+      tr.children[1].textContent = fd.get("client");
+      document.querySelector("#invoices tbody").append(tr);
+      e.target.reset();
+    });
+    document.getElementById("mark-paid").addEventListener("click", () => {
+      document.querySelectorAll("#invoices td.unpaid").forEach((td) => { td.textContent = "Paid"; td.className = "paid"; });
+    });
+    document.getElementById("search").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const q = new FormData(e.target).get("q").toLowerCase();
+      let hits = 0;
+      document.querySelectorAll("#invoices tbody tr").forEach((tr) => {
+        const match = tr.textContent.toLowerCase().includes(q);
+        tr.style.display = match ? "" : "none";
+        if (match) hits++;
+      });
+      document.getElementById("search-result").textContent = `${hits} invoice(s) match "${q}"`;
+    });
+  </script>
+</body>
+</html>

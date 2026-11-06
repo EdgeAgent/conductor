@@ -1,0 +1,87 @@
+/* Conductor Big Workspace — the full-window version of the side panel.
+   Same product and same state model, sized for real reading and real work. */
+body.workspace {
+  font-size: 16px;
+  line-height: 1.6;
+  min-width: 760px;
+}
+body.workspace .brand {
+  padding: 20px 28px 12px;
+  max-width: 1560px;
+  width: 100%;
+  margin: 0 auto;
+}
+body.workspace .brand .mark { width: 44px; height: 44px; font-size: 24px; border-radius: 13px; }
+body.workspace .brand-name { font-size: 16px; }
+body.workspace .brand-sub { font-size: 13px; max-width: 760px; }
+body.workspace .tabs,
+body.workspace .targetbar {
+  padding-left: max(28px, calc((100vw - 1560px) / 2 + 28px));
+  padding-right: max(28px, calc((100vw - 1560px) / 2 + 28px));
+}
+body.workspace .tab { font-size: 15px; padding: 12px 14px; }
+body.workspace .targetbar { gap: 14px; padding-top: 12px; padding-bottom: 12px; }
+body.workspace .target-label { font-size: 13px; flex-basis: 520px; }
+body.workspace .target-label select { font-size: 14px; padding: 9px 10px; }
+body.workspace .follow { font-size: 13px; }
+body.workspace #open-workspace { display: none; }
+
+body.workspace main { width: 100%; }
+body.workspace .messages {
+  width: min(1040px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 28px 0 34px;
+  gap: 16px;
+}
+body.workspace .msg { font-size: 16.5px; padding: 15px 18px; max-width: 88%; }
+body.workspace .msg.system-note { font-size: 13.5px; max-width: 760px; }
+body.workspace .step { padding: 14px 16px; border-radius: 14px; }
+body.workspace .step .fname { font-size: 14px; }
+body.workspace .step pre { font-size: 13px; max-height: 420px; }
+body.workspace .composer {
+  padding: 16px max(28px, calc((100vw - 1040px) / 2));
+}
+body.workspace .composer textarea { min-height: 92px; font-size: 16.5px; padding: 14px 16px; }
+body.workspace .composer-row .hint { font-size: 13px; }
+body.workspace .btn { font-size: 14px; padding: 9px 15px; }
+body.workspace .pad {
+  width: min(1240px, calc(100% - 56px));
+  margin: 0 auto;
+  padding: 26px 0 38px;
+}
+body.workspace #tools-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 12px;
+}
+body.workspace .tool { margin-bottom: 0; padding: 14px 16px; }
+body.workspace .tool .fname { font-size: 13.5px; }
+body.workspace .tool .desc { font-size: 14px; }
+body.workspace .settings { max-width: 860px; }
+body.workspace .settings label { font-size: 14px; }
+body.workspace .settings .note { font-size: 14px; }
+body.workspace .summary { font-size: 15px; }
+
+/* v1.2 additions at workspace scale */
+body.workspace .route-badge { font-size: 12px; padding: 4px 11px; }
+body.workspace .quickbar {
+  width: min(1040px, calc(100% - 56px)); margin: 0 auto; padding: 12px 0 0;
+}
+body.workspace .quickbar .qa { font-size: 13px; padding: 6px 13px; }
+body.workspace .skillbar {
+  width: min(1040px, calc(100% - 56px)); margin: 10px auto 0; font-size: 14px;
+}
+body.workspace .welcome { padding: 20px 22px; }
+body.workspace .welcome h3 { font-size: 18px; }
+body.workspace .welcome p { font-size: 15px; }
+body.workspace .scancard .scan-grid { grid-template-columns: repeat(3, 1fr); font-size: 14px; }
+body.workspace .seg label { font-size: 14px; }
+body.workspace .route-block-head { font-size: 15px; }
+
+@media (max-width: 820px) {
+  body.workspace { min-width: 320px; }
+  body.workspace .messages,
+  body.workspace .pad { width: calc(100% - 28px); }
+  body.workspace .composer { padding-left: 14px; padding-right: 14px; }
+  body.workspace .msg { max-width: 96%; }
+}
