@@ -130,7 +130,16 @@ async function runModelChat(msg) {
       } else {
         data = await bridgeModelChat(req); // local bridge proxy — still on this machine
       }
-      return { ok: true, data, route, transport };
+      // v2.1 usage accounting: tokens + estimated cost for every call,
+      // recorded at the source (this is the one place all chat calls pass).
+      let usageRec = null;
+      const usage = Lib.extractUsage(route.route, data);
+      if (usage) {
+        const price = Lib.modelPrice(route.model, route.route, settings.priceOverrides);
+        usageRec = { ts: Date.now(), route: route.route, model: route.model, prompt: usage.prompt, completion: usage.completion, costUsd: Lib.callCostUsd(price, usage) };
+        await recordUsagePersistent(usageRec).catch(() => {});
+      }
+      return { ok: true, data, route, transport, usage: usageRec };
     } catch (err) {
       if (err && err.name === "AbortError") return { ok: false, code: "ABORTED", error: "Stopped." };
       errors.push(String(err && err.message ? err.message : err));
@@ -143,6 +152,17 @@ async function runModelChat(msg) {
     error: errors[0] || "Model call failed.",
     route,
   };
+}
+
+const USAGE_KEY = "conductor_usage_v1";
+let usageWriteChain = Promise.resolve();
+function recordUsagePersistent(rec) {
+  usageWriteChain = usageWriteChain.then(async () => {
+    const stored = await chrome.storage.local.get(USAGE_KEY);
+    const next = Lib.recordUsage(stored[USAGE_KEY] || Lib.emptyUsageStore(), rec);
+    await chrome.storage.local.set({ [USAGE_KEY]: next });
+  }).catch(() => {});
+  return usageWriteChain;
 }
 
 function broadcast(msg) {
@@ -279,6 +299,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         case "MODEL_CHAT": {
           sendResponse(await runModelChat(msg));
+          break;
+        }
+        case "USAGE_GET": {
+          const stored = await chrome.storage.local.get(USAGE_KEY);
+          sendResponse({ ok: true, store: stored[USAGE_KEY] || Lib.emptyUsageStore() });
+          break;
+        }
+        case "USAGE_RESET": {
+          await chrome.storage.local.set({ [USAGE_KEY]: Lib.emptyUsageStore() });
+          sendResponse({ ok: true });
           break;
         }
         case "MODEL_ABORT": {

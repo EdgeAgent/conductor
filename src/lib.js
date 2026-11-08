@@ -313,6 +313,131 @@
     return "No model route";
   }
 
+  // ---------------- Model usage, pricing & traces (v2.1) ----------------
+  // Every model call is accounted: tokens in/out and an estimated cost from
+  // a dated reference price table (USD per 1M tokens). Prices are ESTIMATES
+  // for display — the provider bill is the truth. The local (Ollama) route
+  // always costs $0. Users can override any model's price in Settings via
+  // settings.priceOverrides = { "model/id": { in, out } }.
+
+  const PRICE_TABLE_DATE = "2026-11";
+  const MODEL_PRICES = {
+    "openrouter/free": { in: 0, out: 0 },
+    "openai/gpt-4o-mini": { in: 0.15, out: 0.60 },
+    "openai/gpt-4o": { in: 2.50, out: 10.00 },
+    "openai/gpt-4.1-mini": { in: 0.40, out: 1.60 },
+    "anthropic/claude-sonnet-4": { in: 3.00, out: 15.00 },
+    "anthropic/claude-3.5-haiku": { in: 0.80, out: 4.00 },
+    "google/gemini-2.5-flash": { in: 0.30, out: 2.50 },
+    "google/gemini-2.5-pro": { in: 1.25, out: 10.00 },
+    "deepseek/deepseek-chat": { in: 0.27, out: 1.10 },
+    "meta-llama/llama-3.3-70b-instruct": { in: 0.10, out: 0.32 },
+    "qwen/qwen-2.5-72b-instruct": { in: 0.33, out: 0.40 },
+  };
+
+  function modelPrice(model, route, overrides) {
+    if (route === "local") return { inPerM: 0, outPerM: 0, source: "local" };
+    const o = overrides && model ? overrides[model] : null;
+    if (o && isFinite(+o.in) && isFinite(+o.out)) return { inPerM: +o.in, outPerM: +o.out, source: "custom" };
+    const t = model ? MODEL_PRICES[model] : null;
+    if (t) return { inPerM: t.in, outPerM: t.out, source: "table" };
+    if (/free/i.test(String(model || ""))) return { inPerM: 0, outPerM: 0, source: "free" };
+    return null; // unknown model: tokens still counted, cost shown as —
+  }
+
+  /** Pull {prompt, completion} token counts out of a provider response. Pure. */
+  function extractUsage(route, data) {
+    if (!data || typeof data !== "object") return null;
+    if (route === "local") {
+      const p = data.prompt_eval_count, c = data.eval_count;
+      if (typeof p === "number" || typeof c === "number") {
+        return { prompt: Math.max(0, p | 0) || 0, completion: Math.max(0, c | 0) || 0 };
+      }
+    }
+    const u = data.usage;
+    if (u && (typeof u.prompt_tokens === "number" || typeof u.completion_tokens === "number")) {
+      return { prompt: Math.max(0, u.prompt_tokens | 0) || 0, completion: Math.max(0, u.completion_tokens | 0) || 0 };
+    }
+    return null;
+  }
+
+  function callCostUsd(price, usage) {
+    if (!price || !usage) return null;
+    return (usage.prompt * price.inPerM + usage.completion * price.outPerM) / 1e6;
+  }
+
+  function emptyUsageBucket() {
+    return { calls: 0, prompt: 0, completion: 0, costUsd: 0, unpricedCalls: 0, models: {} };
+  }
+  function emptyUsageStore() {
+    return { days: {}, total: emptyUsageBucket(), recent: [] };
+  }
+  function usageDayKey(ts) {
+    const d = new Date(ts);
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${mm}-${dd}`;
+  }
+  function addToBucket(bucket, rec) {
+    bucket.calls += 1;
+    bucket.prompt += rec.prompt | 0;
+    bucket.completion += rec.completion | 0;
+    if (typeof rec.costUsd === "number") bucket.costUsd += rec.costUsd;
+    else bucket.unpricedCalls += 1;
+    const key = `${rec.route}:${rec.model}`;
+    const m = bucket.models[key] || (bucket.models[key] = { calls: 0, prompt: 0, completion: 0, costUsd: 0, unpricedCalls: 0 });
+    m.calls += 1;
+    m.prompt += rec.prompt | 0;
+    m.completion += rec.completion | 0;
+    if (typeof rec.costUsd === "number") m.costUsd += rec.costUsd;
+    else m.unpricedCalls += 1;
+  }
+  /** Record one call into the store (returns a new store). Pure. */
+  function recordUsage(store, rec) {
+    const s = store && store.days ? store : emptyUsageStore();
+    const next = { days: { ...s.days }, total: JSON.parse(JSON.stringify(s.total)), recent: (s.recent || []).slice() };
+    const day = usageDayKey(rec.ts || Date.now());
+    const dayBucket = next.days[day] ? JSON.parse(JSON.stringify(next.days[day])) : emptyUsageBucket();
+    addToBucket(dayBucket, rec);
+    next.days[day] = dayBucket;
+    addToBucket(next.total, rec);
+    next.recent.unshift({ ts: rec.ts, route: rec.route, model: rec.model, prompt: rec.prompt | 0, completion: rec.completion | 0, costUsd: typeof rec.costUsd === "number" ? rec.costUsd : null });
+    next.recent = next.recent.slice(0, 100);
+    // keep at most 62 day buckets
+    const keys = Object.keys(next.days).sort();
+    while (keys.length > 62) delete next.days[keys.shift()];
+    return next;
+  }
+  /** Sum the last N day-buckets (including today). Pure. */
+  function usageWindow(store, daysBack, nowTs) {
+    const out = emptyUsageBucket();
+    if (!store || !store.days) return out;
+    for (let i = 0; i < daysBack; i++) {
+      const b = store.days[usageDayKey(nowTs - i * 86400000)];
+      if (!b) continue;
+      out.calls += b.calls; out.prompt += b.prompt; out.completion += b.completion;
+      out.costUsd += b.costUsd; out.unpricedCalls += b.unpricedCalls;
+      for (const [k, m] of Object.entries(b.models || {})) {
+        const t = out.models[k] || (out.models[k] = { calls: 0, prompt: 0, completion: 0, costUsd: 0, unpricedCalls: 0 });
+        t.calls += m.calls; t.prompt += m.prompt; t.completion += m.completion; t.costUsd += m.costUsd; t.unpricedCalls += m.unpricedCalls;
+      }
+    }
+    return out;
+  }
+  function formatTokens(n) {
+    n = Math.max(0, Math.round(+n || 0));
+    if (n < 1000) return String(n);
+    if (n < 1e6) return (n / 1000).toFixed(n < 100000 ? 1 : 0).replace(/\.0$/, "") + "k";
+    return (n / 1e6).toFixed(2).replace(/0$/, "") + "M";
+  }
+  function formatUsd(x) {
+    if (typeof x !== "number" || !isFinite(x)) return "—";
+    if (x === 0) return "$0.00";
+    if (x < 0.01) return "$" + x.toFixed(4);
+    if (x < 1) return "$" + x.toFixed(3).replace(/0$/, "");
+    return "$" + x.toFixed(2);
+  }
+
   /** Append one entry to the activity log (newest first, capped). Pure. */
   function appendActivity(entries, entry, cap = 200) {
     const list = Array.isArray(entries) ? entries.slice() : [];
@@ -1233,6 +1358,17 @@
     resolveRoute,
     buildChatRequest,
     routeBadgeText,
+    MODEL_PRICES,
+    PRICE_TABLE_DATE,
+    modelPrice,
+    extractUsage,
+    callCostUsd,
+    emptyUsageStore,
+    recordUsage,
+    usageWindow,
+    usageDayKey,
+    formatTokens,
+    formatUsd,
     appendActivity,
     seedSkills,
     normalizeSkill,
