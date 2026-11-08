@@ -2,7 +2,7 @@
 
 **The web has millions of useful sites and almost no MCP servers. Conductor closes that gap from inside your browser.**
 
-Open any page and Conductor gives it a tool surface an AI can actually use — then lets you drive it from a chat panel, or expose it to *any* MCP client (Hermes, Claude, your own agents) through a tiny local bridge. New in v1.2: **local-first model routing** — run Ollama and page content never leaves your computer. **New in v2.0: the suite** — a tamper-evident session Journal, the Lens API recorder built in, a Wallet guard that caps agent spending, and Mesh Mode: QR pairing and node management with the [Agent Mesh](https://github.com/EdgeAgent/agent-mesh) daemon.
+Open any page and Conductor gives it a tool surface an AI can actually use — then lets you drive it from a chat panel, or expose it to *any* MCP client (Hermes, Claude, your own agents) through a tiny local bridge. New in v1.2: **local-first model routing** — run Ollama and page content never leaves your computer. **New in v2.0: the suite** — a tamper-evident session Journal, the Lens API recorder built in, a Wallet guard that caps agent spending, and Mesh Mode: QR pairing and node management with the [Conductor Mesh](mesh/README.md) daemon.
 
 ## The three ways a page gets tools
 
@@ -36,7 +36,7 @@ Conductor grew from a browser agent into the control surface for your agent stac
 - **🛡 Journal (v1.4)** — an append-only, hash-chained receipt log of sessions: arm a watch and tab opens/closes/navigations are chained (SHA-256, verifiable in the panel), alongside every tool call, approval, denial and takeover from chat. One-click restore reopens a session's tabs from the chain; exports are JSON receipts or a printable HTML report.
 - **🔎 Lens (v1.5)** — the API Lens recorder, built in. Arm recording on a tab and Conductor captures the page's fetch/XHR calls (secrets redacted on receipt — tokens and passwords never reach storage), groups them into endpoints with inferred schemas and detected auth, and turns them into importable tools or an OpenAPI export.
 - **💳 Wallet guard (v1.6)** — spending caps for agent actions. Money actions (pay / buy / checkout / subscribe, on the page or via API) are checked against a per-action cap ($25), a daily cap ($100), and an approval line ($5) *before* the approval prompt — plus an origin allowlist and a kill switch. A guard refusal is final: the agent is told not to retry or route around it. Only you can raise a cap, in Settings.
-- **🌐 Mesh Mode (v2.0)** — device pairing and node management with the [Agent Mesh](https://github.com/EdgeAgent/agent-mesh) daemon over Native Messaging. The panel shows this node's root-signed identity (fingerprints only — the extension never holds keys), renders one-time **QR pairing codes** for phones and other machines, lists paired nodes, and drives chain sync and **dual-entry-proven handoffs** (HANDOFF ↔ RECEIPT hash match) over mTLS. No daemon installed? The tab shows setup steps — it never pretends.
+- **🌐 Mesh Mode (v2.0)** — device pairing and node management with the [Conductor Mesh](mesh/README.md) daemon over Native Messaging. The panel shows this node's root-signed identity (fingerprints only — the extension never holds keys), renders one-time **QR pairing codes** for phones and other machines, lists paired nodes, and drives chain sync and **dual-entry-proven handoffs** (HANDOFF ↔ RECEIPT hash match) over mTLS. No daemon installed? The tab shows setup steps — it never pretends.
 
 ## Local-first model routing (v1.2)
 
