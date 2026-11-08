@@ -8,6 +8,15 @@ const API_TOOLS_KEY = "conductor_api_tools_v1";
 const SETTINGS_KEY = "conductor_settings_v1";
 
 const tabTools = new Map(); // tabId -> { tools, url, title, updatedAt }
+const lensRecordingByTab = new Map(); // tabId -> bool (v1.5 Lens recording intent; survives page reloads)
+
+// Takeover state, per tab (Lib takeover-state shape). The worker owns this
+// map: the panel mirrors the current target tab's entry via TAKEOVER_GET /
+// TAKEOVER_CHANGED, tab switches read their own entry (no leakage), and a
+// closed tab's entry is dropped in tabs.onRemoved below. While a tab's
+// entry is active, EXECUTE_TOOL and bridge calls on that tab are refused.
+let tabTakeover = {}; // tabId -> takeover state
+const getTakeover = (tabId) => Lib.takeoverForTab(tabTakeover, tabId);
 
 const fetchingTabs = new Set(); // coalesce concurrent tool fetches per tab
 async function fetchToolsFromPage(tabId) {
@@ -169,11 +178,78 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(res || { ok: false, error: "No response from page." });
           break;
         }
+        case "TAKEOVER_GET": {
+          sendResponse({ ok: true, takeover: getTakeover(msg.tabId) });
+          break;
+        }
+        case "TAKEOVER_SET": {
+          const state = Lib.normalizeTakeoverState(msg.takeover);
+          tabTakeover = state.active
+            ? Lib.withTakeoverForTab(tabTakeover, msg.tabId, state)
+            : Lib.withoutTakeoverForTab(tabTakeover, msg.tabId);
+          broadcast({ type: "TAKEOVER_CHANGED", tabId: msg.tabId, takeover: state });
+          sendResponse({ ok: true, takeover: state });
+          break;
+        }
+        case "TAKEOVER_SIGNALS": {
+          const res = await chrome.tabs.sendMessage(msg.tabId, { type: "TAKEOVER_SIGNALS" });
+          sendResponse(res || { ok: false, error: "No response from page." });
+          break;
+        }
         case "EXECUTE_TOOL": {
+          // Takeover gate: while the user is driving this tab, NOTHING
+          // executes on it — reads and writes alike, from any caller.
+          const gate = Lib.toolAllowedDuringTakeover(getTakeover(msg.tabId));
+          if (!gate.allowed) {
+            sendResponse({ ok: false, code: "TAKEOVER_ACTIVE", error: gate.reason });
+            break;
+          }
           const res = await chrome.tabs.sendMessage(msg.tabId, { type: "EXECUTE_TOOL", tool: msg.tool, args: msg.args });
           sendResponse(res || { ok: false, error: "No response from page." });
           // Actions can change the page: refresh the tool cache shortly after.
           setTimeout(() => fetchToolsFromPage(msg.tabId).catch(() => {}), 600);
+          break;
+        }
+        case "LENS_CHANGED": {
+          broadcast({ type: "LENS_CHANGED", tabId: sender.tab ? sender.tab.id : undefined });
+          sendResponse({ ok: true });
+          break;
+        }
+        case "LENS_STATE_QUERY": {
+          // page.js asks on (re)load: recording intent lives HERE, per tab,
+          // so it survives page reloads (page.js state does not).
+          const tid = sender.tab ? sender.tab.id : undefined;
+          sendResponse({ ok: true, recording: !!(tid != null && lensRecordingByTab.get(tid)) });
+          break;
+        }
+        case "LENS_GET": {
+          const res = await chrome.tabs.sendMessage(msg.tabId, { type: "LENS_GET_CALLS" });
+          if (res && res.ok) res.recording = !!lensRecordingByTab.get(msg.tabId);
+          sendResponse(res || { ok: false, error: "No response from page." });
+          break;
+        }
+        case "LENS_SET": {
+          lensRecordingByTab.set(msg.tabId, !!msg.on);
+          const res = await chrome.tabs.sendMessage(msg.tabId, { type: "LENS_SET_RECORDING", on: !!msg.on }).catch(() => null);
+          sendResponse(res ? { ...res, recording: !!msg.on } : { ok: true, recording: !!msg.on, count: 0 });
+          break;
+        }
+        case "LENS_CLEAR": {
+          const res = await chrome.tabs.sendMessage(msg.tabId, { type: "LENS_CLEAR_CALLS" });
+          sendResponse(res || { ok: false, error: "No response from page." });
+          break;
+        }
+        case "MESH_NATIVE": {
+          // v2.0 Mesh Mode: one-shot Native Messaging to the local mesh
+          // daemon (ca.edgeagency.meshnode). The daemon owns keys, certs
+          // and the receipt chain; the extension only ever sees public
+          // identity (names + fingerprints), pairing payloads and logs.
+          try {
+            const res = await chrome.runtime.sendNativeMessage("ca.edgeagency.meshnode", msg.payload || {});
+            sendResponse(res || { ok: false, error: "Mesh daemon sent no reply." });
+          } catch (e) {
+            sendResponse({ ok: false, code: "MESH_HOST_MISSING", error: "Mesh daemon not reachable. Install the native host (mesh-daemon/install-native-host) and enroll this machine's node first." });
+          }
           break;
         }
         case "IMPORT_API_TOOLS": {
@@ -212,7 +288,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           break;
         }
         default:
-          sendResponse({ ok: false, error: "Unknown message" });
+          // JOURNAL_* messages are answered by the journal listener below.
+          if (!String(msg.type || "").startsWith("JOURNAL_")) sendResponse({ ok: false, error: "Unknown message" });
       }
     } catch (err) {
       sendResponse({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -221,7 +298,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
-chrome.tabs.onRemoved.addListener((tabId) => tabTools.delete(tabId));
+chrome.tabs.onRemoved.addListener((tabId) => {
+  tabTools.delete(tabId);
+  lensRecordingByTab.delete(tabId);
+  tabTakeover = Lib.withoutTakeoverForTab(tabTakeover, tabId); // closing the tab clears its takeover
+});
 chrome.tabs.onActivated.addListener(({ tabId }) => updateBadge(tabId));
 
 // ---------------- MCP bridge client (WebSocket to the local bridge) ----------------
@@ -304,6 +385,9 @@ async function bridgeConnect() {
           const entry = await fetchToolsFromPage(tabId).catch(() => tabTools.get(tabId));
           const tool = entry && entry.tools.find((t) => t.name === msg.tool);
           if (!tool) throw new Error(`Tool "${msg.tool}" is not available on the active page.`);
+          // Takeover gate: a user driving this tab blocks bridge calls too.
+          const tkGate = Lib.toolAllowedDuringTakeover(getTakeover(tabId));
+          if (!tkGate.allowed) throw new Error(tkGate.reason);
           const s = await bridgeSettings();
           if (tool.risk === "write" && !s.bridgeAllowWrites) {
             throw new Error(`"${tool.name}" is a write tool. Bridge writes are off — approve it in the Conductor side panel, or enable bridge writes in Settings.`);
@@ -336,6 +420,135 @@ function scheduleBridgeRetry() {
   }, bridge.retryMs);
   bridge.retryMs = Math.min(bridge.retryMs * 1.5, 30000);
 }
+
+// ---------------- Session Journal (v1.4) ----------------
+// Hash-chained, tamper-evident journal (Lib.journal*) + watch sessions
+// with one-click restore, ported from Agent Flight Recorder. While a
+// session is armed, tab opens/closes/navigations are journaled; agent
+// actions are mirrored in by the panel via JOURNAL_LOG.
+const JOURNAL_KEY = "conductor_journal_v1";
+const JOURNAL_SESSION_KEY = "conductor_journal_session_v1";
+let journalChainCache = null;
+let journalSessionCache = undefined; // undefined = not loaded yet
+const journalTabUrls = new Map();
+let journalWriteQueue = Promise.resolve();
+
+async function journalChain() {
+  if (journalChainCache) return journalChainCache;
+  const data = await chrome.storage.local.get(JOURNAL_KEY);
+  journalChainCache = Array.isArray(data[JOURNAL_KEY]) ? data[JOURNAL_KEY] : [];
+  return journalChainCache;
+}
+async function journalSession() {
+  if (journalSessionCache !== undefined) return journalSessionCache;
+  const data = await chrome.storage.local.get(JOURNAL_SESSION_KEY);
+  journalSessionCache = data[JOURNAL_SESSION_KEY] || null;
+  return journalSessionCache;
+}
+function journalLog(type, text, meta) {
+  journalWriteQueue = journalWriteQueue.then(async () => {
+    const chain = await journalChain();
+    Lib.journalAppend(chain, { type, text, meta });
+    journalChainCache = chain;
+    await chrome.storage.local.set({ [JOURNAL_KEY]: chain });
+    broadcast({ type: "JOURNAL_CHANGED" });
+  }).catch(() => {});
+  return journalWriteQueue;
+}
+const journalInternalUrl = (u) => !u || /^(chrome|about|edge|brave|view-source|chrome-extension):/.test(u);
+
+chrome.tabs.onCreated.addListener(async (tab) => {
+  if (tab.id != null && tab.url) journalTabUrls.set(tab.id, tab.url);
+  const s = await journalSession();
+  if (s && s.armed && !journalInternalUrl(tab.url || "")) {
+    journalLog("TAB-OPEN", tab.url || tab.title || "New tab", { tabId: tab.id });
+  }
+});
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  const url = journalTabUrls.get(tabId);
+  journalTabUrls.delete(tabId);
+  const s = await journalSession();
+  if (s && s.armed && url && !journalInternalUrl(url)) {
+    journalLog("TAB-CLOSE", url, { tabId });
+  }
+});
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+  if (!changeInfo.url) return;
+  const from = journalTabUrls.get(tabId);
+  journalTabUrls.set(tabId, changeInfo.url);
+  const s = await journalSession();
+  if (s && s.armed && from && from !== changeInfo.url && !journalInternalUrl(changeInfo.url)) {
+    journalLog("NAV", `${from} → ${changeInfo.url}`, { tabId });
+  }
+});
+
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (!msg || !String(msg.type || "").startsWith("JOURNAL_")) return false;
+  (async () => {
+    try {
+      switch (msg.type) {
+        case "JOURNAL_GET": {
+          const chain = await journalChain();
+          sendResponse({ ok: true, chain, session: await journalSession(), verify: Lib.journalVerify(chain) });
+          break;
+        }
+        case "JOURNAL_LOG": {
+          await journalLog(String(msg.entryType || "note"), String(msg.text || ""), msg.meta || {});
+          sendResponse({ ok: true });
+          break;
+        }
+        case "JOURNAL_ARM": {
+          const tabs = await chrome.tabs.query({});
+          const snapshot = tabs
+            .filter((t) => !journalInternalUrl(t.url || ""))
+            .map((t) => ({ id: t.id, url: t.url, title: t.title || "", pinned: !!t.pinned }));
+          journalSessionCache = { armed: true, startedAt: new Date().toISOString(), snapshot };
+          await chrome.storage.local.set({ [JOURNAL_SESSION_KEY]: journalSessionCache });
+          await journalLog("ARM", `Watch session armed — ${snapshot.length} tab(s) snapshotted`, { tabs: snapshot.length });
+          sendResponse({ ok: true, session: journalSessionCache });
+          break;
+        }
+        case "JOURNAL_DISARM": {
+          journalSessionCache = null;
+          await chrome.storage.local.set({ [JOURNAL_SESSION_KEY]: null });
+          await journalLog("DISARM", "Watch session disarmed");
+          sendResponse({ ok: true });
+          break;
+        }
+        case "JOURNAL_PLAN": {
+          const s = await journalSession();
+          if (!s || !s.armed) { sendResponse({ ok: false, error: "No armed session." }); break; }
+          const current = await chrome.tabs.query({});
+          sendResponse({ ok: true, plan: Lib.planRestore(s.snapshot, current) });
+          break;
+        }
+        case "JOURNAL_RESTORE": {
+          const s = await journalSession();
+          if (!s || !s.armed) { sendResponse({ ok: false, error: "No armed session." }); break; }
+          const current = await chrome.tabs.query({});
+          const plan = Lib.planRestore(s.snapshot, current);
+          for (const id of plan.closeIds) { try { await chrome.tabs.remove(id); } catch { /* already gone */ } }
+          for (const item of plan.open) { try { await chrome.tabs.create({ url: item.url, pinned: item.pinned, active: false }); } catch { /* skip */ } }
+          await journalLog("RESTORE", `Restored session snapshot — closed ${plan.closeIds.length}, reopened ${plan.open.length}`, { closed: plan.closeIds.length, opened: plan.open.length });
+          sendResponse({ ok: true, plan });
+          break;
+        }
+        case "JOURNAL_CLEAR": {
+          journalChainCache = [];
+          await chrome.storage.local.set({ [JOURNAL_KEY]: [] });
+          broadcast({ type: "JOURNAL_CHANGED" });
+          sendResponse({ ok: true });
+          break;
+        }
+        default:
+          sendResponse({ ok: false, error: "Unknown journal message." });
+      }
+    } catch (e) {
+      sendResponse({ ok: false, error: String((e && e.message) || e) });
+    }
+  })();
+  return true;
+});
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[SETTINGS_KEY]) {
