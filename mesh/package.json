@@ -1,0 +1,10 @@
+{
+  "name": "conductor-mesh",
+  "version": "1.0.0",
+  "description": "Conductor Mesh — the local node engine behind Conductor Mesh Mode: QR pairing, root-signed node identity, mTLS sync, dual-entry handoff receipts.",
+  "type": "module",
+  "bin": { "conductor-mesh": "./daemon.mjs" },
+  "scripts": { "test": "node --test tests/*.test.mjs" },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
