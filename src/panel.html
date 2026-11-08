@@ -21,7 +21,8 @@
     <button class="tab" data-tab="tools">🧰 Tools <span class="count" id="tool-count"></span></button>
     <button class="tab" data-tab="skills">🧠 Skills</button>
     <button class="tab" data-tab="vault">🔐 Vault</button>
-    <button class="tab" data-tab="activity">🛡 Activity</button>
+    <button class="tab" data-tab="activity">🛡 Journal</button>
+    <button class="tab" data-tab="mesh">🌐 Mesh</button>
     <button class="tab" data-tab="settings">⚙️ Settings</button>
   </nav>
 
@@ -42,10 +43,15 @@
         <button class="btn ghost qa" id="qa-scan">🔍 Scan site</button>
         <button class="btn ghost qa" id="qa-summarize">📄 Summarize page</button>
         <button class="btn ghost qa" id="qa-tools">🧰 List tools</button>
+        <button class="btn ghost qa" id="qa-takeover" title="Pause Conductor and drive this tab yourself. While you drive, Conductor runs no tools on it.">✋ Take over</button>
       </div>
       <div class="skillbar" id="skill-bar" hidden>
         <span class="skillbar-text">🧠 Skill active: <b id="skill-bar-name"></b></span>
         <button class="btn ghost tiny" id="skill-bar-off">✕ Turn off</button>
+      </div>
+      <div class="takeoverbar" id="takeover-bar" hidden>
+        <span class="takeoverbar-text">✋ <b>You're in control</b> — Conductor is paused on this tab and can't run any tools.<span id="takeover-reason"></span></span>
+        <button class="btn primary" id="takeover-handback">🎼 Hand back to Conductor</button>
       </div>
       <div class="composer">
         <textarea id="input" rows="2" placeholder="Tell Conductor what to do on this page…  (e.g. “total the unpaid invoices”)"></textarea>
@@ -68,6 +74,17 @@
           <button id="refresh-tools" class="btn ghost">↻ Refresh</button>
         </div>
         <div id="tools-list"></div>
+        <h3>🔎 API Lens — record this page's API calls</h3>
+        <div class="row gap">
+          <span class="summary" id="lens-status">Lens idle. Recording captures the bound page's fetch/XHR calls (secrets redacted) and groups them into endpoints you can turn into tools.</span>
+        </div>
+        <div class="row gap">
+          <button id="lens-record" class="btn">⏺ Start recording</button>
+          <button id="lens-make-tools" class="btn ghost" hidden>🧰 Make tools from endpoints</button>
+          <button id="lens-export" class="btn ghost" hidden>⬇ Export OpenAPI</button>
+          <button id="lens-clear" class="btn ghost" hidden>Clear calls</button>
+        </div>
+        <div id="lens-list"></div>
       </div>
     </section>
 
@@ -161,11 +178,49 @@
 
     <section id="view-activity" class="view">
       <div class="pad">
+        <h3>Session Journal — tamper-evident</h3>
+        <div class="row gap">
+          <span class="summary" id="journal-status">Journal loading…</span>
+        </div>
+        <div class="row gap">
+          <button id="journal-arm" class="btn">🎯 Arm watch session</button>
+          <button id="journal-disarm" class="btn ghost" hidden>⏹ Disarm</button>
+          <button id="journal-restore" class="btn ghost" hidden>⏪ Restore snapshot</button>
+          <button id="journal-export-json" class="btn ghost">⬇ Receipts (JSON)</button>
+          <button id="journal-export-html" class="btn ghost">⬇ Report (HTML)</button>
+          <button id="journal-clear" class="btn ghost">Clear journal</button>
+        </div>
+        <p class="summary">While a session is armed, tab opens, closes and navigations are recorded alongside Conductor's tool calls and approvals in a hash-chained journal stored only in this browser. Restore closes tabs opened since the snapshot and reopens the ones that were there. Form values, cookies and page content are never journaled.</p>
+        <div id="journal-list"></div>
+        <h3>Activity</h3>
         <div class="row gap">
           <span class="summary" id="activity-summary">Everything Conductor's chat has done, newest first. Stored only in this browser.</span>
           <button id="activity-clear" class="btn ghost">Clear log</button>
         </div>
         <div id="activity-list"></div>
+      </div>
+    </section>
+
+    <section id="view-mesh" class="view">
+      <div class="pad">
+        <h3>Mesh — device pairing &amp; node management</h3>
+        <div class="row gap">
+          <span class="summary" id="mesh-status">Checking for the mesh daemon…</span>
+        </div>
+        <div id="mesh-identity"></div>
+        <div class="row gap">
+          <button id="mesh-refresh" class="btn ghost">↻ Refresh</button>
+          <button id="mesh-pair" class="btn">📱 Pair a device (QR)</button>
+        </div>
+        <div id="mesh-qr-block" hidden>
+          <p class="summary">Scan with the companion device — or open the link on it. The code carries a one-time pairing token (10 minutes, single use). The device generates its own identity key; the desktop node root-signs its public key into a mesh certificate. Private keys never leave their device.</p>
+          <div class="qr-box" id="mesh-qr"></div>
+          <p class="summary mono" id="mesh-claim-url"></p>
+        </div>
+        <h3>Paired nodes</h3>
+        <div id="mesh-peers"></div>
+        <h3>Handoff log — receipt chain</h3>
+        <div id="mesh-log"></div>
       </div>
     </section>
 
@@ -198,6 +253,23 @@
           <p class="note">Page data goes to OpenRouter <b>only</b> when the cloud route is active — because you picked it above, or flipped “Use cloud” for one chat. There is no silent fallback: if the local route fails, Conductor stops and asks.</p>
         </div>
 
+        <div class="route-block">
+          <div class="route-block-head">💳 Wallet guard <span class="route-state dim">spending caps for agent actions</span></div>
+          <p class="note" id="wallet-summary">Wallet guard loading…</p>
+          <label><input type="checkbox" id="wallet-enabled" /> Guard on — check money actions (pay / buy / checkout / subscribe) against caps before they run</label>
+          <label><input type="checkbox" id="wallet-killed" /> ⛔ Kill switch — refuse ALL spending</label>
+          <label>Per-action cap (USD)
+            <input type="number" id="wallet-pertx" min="0" step="1" />
+          </label>
+          <label>Daily cap (USD)
+            <input type="number" id="wallet-daily" min="0" step="1" />
+          </label>
+          <label>Approval line (USD) — at/above this, the approval card shows wallet context
+            <input type="number" id="wallet-line" min="0" step="1" />
+          </label>
+          <p class="note">A guard refusal is final: the agent is told not to retry or route around it. Only you can raise a cap here. Approved spends are recorded in a local ledger and in the Journal. The guard never holds payment details — it only checks amounts, caps and the kill switch.</p>
+        </div>
+
         <h3>Workspace</h3>
         <p class="note">The side panel is the quick view. Use <b>⛶ Big window</b> for the full workspace: a large, readable chat, wider tool cards, and room to inspect results. The <b>Working on</b> picker at the top locks Conductor to the right web page even while the big window has focus.</p>
 
@@ -207,7 +279,8 @@
         <p class="note">Run <code>node conductor-bridge.mjs</code> from the extension's <code>bridge/</code> folder, add it to your MCP client, and Hermes / Claude / any MCP host can drive this browser. The bridge also carries local model calls if your Ollama refuses direct extension connections. Status: <b id="bridge-status">unknown</b></p>
 
         <h3>About</h3>
-        <p class="note"><b>Local-first:</b> when Ollama is on, page content never leaves your computer.<br />
+        <p class="note"><b>Takeover Mode (v1.3):</b> hit <b>✋ Take over</b> in the chat any time to pause Conductor and drive the tab yourself — while you drive, it runs no tools on that tab. Conductor also asks for your hands when it reaches a sign-in form, a CAPTCHA, a one-time code, or a payment form, and the model can ask too. <b>Hand back</b> re-reads the page and the conversation continues.<br />
+        <b>Local-first:</b> when Ollama is on, page content never leaves your computer.<br />
         Conductor <b>Free</b> while in beta — every feature unlocked, bring your own model (local or your own key).<br />
         <b>Conductor Pro — $12/month</b> at launch: hosted models (no key needed), saved tool libraries, team sharing. Flat price, no credits. No account, no telemetry.</p>
       </div>
@@ -215,6 +288,7 @@
   </main>
 
   <script src="lib.js"></script>
+  <script src="qrcode.js"></script>
   <script type="module" src="panel.js"></script>
 </body>
 </html>
