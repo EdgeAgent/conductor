@@ -27,6 +27,62 @@ let routeInfo = null; // last resolved route from the worker
 let ollamaStatus = null; // { detected, models }
 let cloudForTask = false; // session-only explicit cloud consent for this chat
 let lastUserText = "";
+let lastUsage = null; // last model call's usage record (from the worker)
+let usageStoreCache = null; // last USAGE_GET snapshot, for the header chip
+
+// ---------------- Usage chip + Settings view (v2.1) ----------------
+async function fetchUsageStore() {
+  try {
+    const res = await chrome.runtime.sendMessage({ type: "USAGE_GET" });
+    if (res && res.ok) usageStoreCache = res.store;
+  } catch { /* worker asleep */ }
+  return usageStoreCache;
+}
+async function updateUsageChip() {
+  const chip = $("usage-chip");
+  if (!chip) return;
+  const store = await fetchUsageStore();
+  if (!store) { chip.textContent = "Σ 0 tok · $0.00"; return; }
+  const today = Lib.usageWindow(store, 1, Date.now());
+  const toks = today.prompt + today.completion;
+  chip.textContent = `Σ ${Lib.formatTokens(toks)} tok · ${Lib.formatUsd(today.costUsd)}${today.unpricedCalls ? " +" : ""}`;
+  chip.title = `Today: ${today.calls} model call${today.calls === 1 ? "" : "s"} · ${Lib.formatTokens(today.prompt)} in / ${Lib.formatTokens(today.completion)} out · est. ${Lib.formatUsd(today.costUsd)}${today.unpricedCalls ? ` (${today.unpricedCalls} unpriced)` : ""}. Full history in Settings → Model usage & pricing.`;
+}
+function usageBucketLine(label, b) {
+  return `${label}: ${b.calls} call${b.calls === 1 ? "" : "s"} · ${Lib.formatTokens(b.prompt)} in / ${Lib.formatTokens(b.completion)} out · est. ${Lib.formatUsd(b.costUsd)}${b.unpricedCalls ? ` · ${b.unpricedCalls} unpriced` : ""}`;
+}
+async function renderUsage() {
+  const summary = $("usage-summary");
+  if (!summary) return;
+  const store = await fetchUsageStore();
+  if (!store) { summary.textContent = "Usage data unavailable."; return; }
+  const now = Date.now();
+  const today = Lib.usageWindow(store, 1, now);
+  const week = Lib.usageWindow(store, 7, now);
+  summary.textContent = [usageBucketLine("Today", today), usageBucketLine("Last 7 days", week), usageBucketLine("All time", store.total)].join("\n");
+  const modelsEl = $("usage-models");
+  modelsEl.textContent = "";
+  const rows = Object.entries(store.total.models || {}).sort((a, b) => (b[1].costUsd || 0) - (a[1].costUsd || 0)).slice(0, 8);
+  if (!rows.length) modelsEl.append(el("div", { class: "empty" }, "No model calls recorded yet."));
+  for (const [key, m] of rows) {
+    modelsEl.append(el("div", { class: "urow" },
+      el("span", { class: "umodel" }, key),
+      el("span", {}, `${m.calls}× · ${Lib.formatTokens(m.prompt + m.completion)} tok`),
+      el("span", { class: "ucost" }, m.unpricedCalls ? "—" : Lib.formatUsd(m.costUsd))));
+  }
+  const recentEl = $("usage-recent");
+  recentEl.textContent = "";
+  const recent = (store.recent || []).slice(0, 10);
+  if (!recent.length) recentEl.append(el("div", { class: "empty" }, "No calls yet — the trail appears here as the agent works."));
+  for (const r of recent) {
+    const when = new Date(r.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    recentEl.append(el("div", { class: "urow" },
+      el("span", { class: "umodel" }, `${when} · ${r.model}`),
+      el("span", {}, `${Lib.formatTokens(r.prompt)} → ${Lib.formatTokens(r.completion)}`),
+      el("span", { class: "ucost" }, r.route === "local" ? "$0.00" : Lib.formatUsd(r.costUsd))));
+  }
+  updateUsageChip();
+}
 let activity = [];
 let skills = [];
 let activeSkillId = null;
@@ -61,15 +117,15 @@ document.querySelectorAll(".tab").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
     document.querySelectorAll(".view").forEach((v) => v.classList.toggle("active", v.id === "view-" + btn.dataset.tab));
-    if (btn.dataset.tab === "settings") refreshOllama(false);
+    if (btn.dataset.tab === "settings") { refreshOllama(false); renderUsage(); }
   });
 });
 function showTab(name) { document.querySelector(`.tab[data-tab="${name}"]`).click(); }
 
 // ---------------- Activity log ----------------
-const ACT_ICONS = { user: "💬", tool: "🔧", ok: "✅", denied: "⛔", error: "⚠️", route: "🧭", approval: "✋", skill: "🧠", scan: "🔍", system: "🎼", takeover: "✋", ARM: "🎯", DISARM: "⏹", "TAB-OPEN": "📂", "TAB-CLOSE": "📁", NAV: "🧭", RESTORE: "⏪" };
+const ACT_ICONS = { user: "💬", tool: "🔧", ok: "✅", denied: "⛔", error: "⚠️", route: "🧭", approval: "✋", skill: "🧠", scan: "🔍", system: "🎼", takeover: "✋", trace: "💭", ARM: "🎯", DISARM: "⏹", "TAB-OPEN": "📂", "TAB-CLOSE": "📁", NAV: "🧭", RESTORE: "⏪" };
 let actSaveTimer = null;
-const JOURNAL_MIRROR = new Set(["tool", "approval", "denied", "error", "scan", "takeover"]);
+const JOURNAL_MIRROR = new Set(["tool", "approval", "denied", "error", "scan", "takeover", "trace"]);
 function logActivity(type, text) {
   activity = Lib.appendActivity(activity, { ts: Date.now(), type, text: truncate(String(text), 220) });
   if (JOURNAL_MIRROR.has(type)) {
@@ -423,6 +479,7 @@ async function callModel() {
     throw err;
   }
   if (res.route) setRouteInfo(res.route);
+  if (res.usage) { lastUsage = res.usage; updateUsageChip(); }
   return res.data;
 }
 
@@ -662,6 +719,16 @@ async function runAgent(userText, opts = {}) {
       history.push(msg);
       const calls = msg.tool_calls || [];
       if (msg.content) bubble("assistant", msg.content);
+      // v2.1 trace: the model's own words (its thinking, in the open) plus
+      // this round's tokens and cost join the trail — Activity + Journal —
+      // right before the moves they cause.
+      if (lastUsage) {
+        const thought = msg.content
+          ? truncate(String(msg.content).replace(/\s+/g, " ").trim(), 110)
+          : (calls.length ? `→ ${calls.map((c) => (c.function && c.function.name) || "?").join(", ")}` : "(no reply text)");
+        logActivity("trace", `${lastUsage.model} · ${Lib.formatTokens(lastUsage.prompt)}→${Lib.formatTokens(lastUsage.completion)} tok · ${lastUsage.route === "local" ? "$0.00" : Lib.formatUsd(lastUsage.costUsd)} — ${thought}`);
+        lastUsage = null;
+      }
       if (!calls.length) return;
       for (const call of calls) {
         const name = call.function && call.function.name;
@@ -1318,6 +1385,7 @@ async function loadSettings() {
   document.querySelectorAll('input[name="route-pref"]').forEach((r) => { r.checked = r.value === (settings.routePref || "auto"); });
   renderOllamaSettings();
   updateBridgeStatus();
+  updateUsageChip();
 }
 
 function renderOllamaSettings() {
@@ -1383,6 +1451,22 @@ let settingsSaveTimer = null;
   });
 });
 $("ollama-redetect").addEventListener("click", () => refreshOllama(true));
+$("usage-price-save").addEventListener("click", async () => {
+  const model = $("usage-price-model").value.trim();
+  const pin = parseFloat($("usage-price-in").value);
+  const pout = parseFloat($("usage-price-out").value);
+  if (!model || !isFinite(pin) || !isFinite(pout)) { note("To save a custom price: model id plus both per-1M prices."); return; }
+  settings = { ...settings, priceOverrides: { ...(settings.priceOverrides || {}), [model]: { in: pin, out: pout } } };
+  await chrome.storage.local.set({ [SETTINGS_KEY]: settings });
+  note(`Custom price saved for ${model} — new calls use it right away.`);
+  renderUsage();
+});
+$("usage-reset").addEventListener("click", async () => {
+  await chrome.runtime.sendMessage({ type: "USAGE_RESET" }).catch(() => {});
+  usageStoreCache = null;
+  note("Usage history cleared.");
+  renderUsage();
+});
 
 async function updateBridgeStatus() {
   try {
