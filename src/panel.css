@@ -323,3 +323,11 @@ main { flex: 1; display: flex; min-height: 0; }
 .takecard .row { gap: 7px; flex-wrap: wrap; }
 .chip.takeover { background: rgba(245, 197, 66, .18); color: var(--gold); }
 .qr-box { background:#fff; padding:12px; border-radius:12px; width:max-content; margin:8px 0; } .qr-box canvas { width:220px; height:220px; image-rendering:pixelated; display:block; } .mono { font-family:ui-monospace, Menlo, monospace; font-size:11px; word-break:break-all; }
+
+/* v2.1 usage */
+.route-badge.usage { background: #14202e; color: #9fb8cd; border: 1px solid #22364a; }
+.urow { display: flex; justify-content: space-between; gap: 10px; padding: 5px 2px; border-bottom: 1px solid #16222f; font-size: 12px; color: #c9d8e6; }
+.urow .umodel { color: #e8eef4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.urow .ucost { color: #f5b921; font-weight: 600; }
+.usage-h { margin: 12px 0 4px; font-size: 12px; color: #9fb8cd; text-transform: uppercase; letter-spacing: .06em; }
+#usage-summary { white-space: pre-line; }

@@ -13,6 +13,7 @@
       <div class="brand-sub" id="page-context">AI Browser Agent &amp; MCP Tools</div>
     </div>
     <span class="route-badge" id="route-badge" title="Where chat runs. Local = page content never leaves this computer.">Checking route…</span>
+    <span class="route-badge usage" id="usage-chip" title="Today's model usage. Full history in Settings.">Σ 0 tok · $0.00</span>
     <div class="bridge-dot" id="bridge-dot" title="MCP bridge status"></div>
   </header>
 
@@ -268,6 +269,29 @@
             <input type="number" id="wallet-line" min="0" step="1" />
           </label>
           <p class="note">A guard refusal is final: the agent is told not to retry or route around it. Only you can raise a cap here. Approved spends are recorded in a local ledger and in the Journal. The guard never holds payment details — it only checks amounts, caps and the kill switch.</p>
+        </div>
+
+        <div class="route-block">
+          <div class="route-block-head">💲 Model usage &amp; pricing <span class="route-state dim">every call counted — tokens, cost, trail</span></div>
+          <p class="note" id="usage-summary">Usage loading…</p>
+          <div id="usage-models"></div>
+          <h4 class="usage-h">Recent calls</h4>
+          <div id="usage-recent"></div>
+          <h4 class="usage-h">Custom price (USD per 1M tokens)</h4>
+          <label>Model id
+            <input type="text" id="usage-price-model" placeholder="e.g. openai/gpt-4o-mini" />
+          </label>
+          <label>Input price
+            <input type="number" id="usage-price-in" min="0" step="0.01" placeholder="0.15" />
+          </label>
+          <label>Output price
+            <input type="number" id="usage-price-out" min="0" step="0.01" placeholder="0.60" />
+          </label>
+          <div class="row">
+            <button id="usage-price-save" class="btn ghost">Save custom price</button>
+            <button id="usage-reset" class="btn ghost">Reset usage history</button>
+          </div>
+          <p class="note">Costs are estimates from a built-in reference price table (Nov 2026) — your provider bill is the truth. Local (Ollama) calls always cost $0. Models with no known price still count their tokens; their cost shows as —. Every call also lands in the Journal trail with the model's own words, so moves, thoughts and direction stay tracked over time.</p>
         </div>
 
         <h3>Workspace</h3>
